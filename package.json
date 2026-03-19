@@ -1,7 +1,7 @@
 {
   "name": "anistream-backend",
-  "version": "1.0.0",
-  "description": "AniStream Premium Backend",
+  "version": "2.0.0",
+  "description": "AniStream Premium Backend — PostgreSQL edition",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -14,11 +14,14 @@
     "jsonwebtoken": "^9.0.2",
     "stripe": "^14.0.0",
     "ws": "^8.16.0",
-    "better-sqlite3": "^9.4.3",
+    "pg": "^8.11.3",
     "dotenv": "^16.4.1",
     "express-rate-limit": "^7.1.5"
   },
   "devDependencies": {
     "nodemon": "^3.0.3"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
