@@ -1,6 +1,10 @@
 {
   "version": 2,
-  "outputDirectory": ".",
+  "functions": {
+    "server.js": {
+      "runtime": "@vercel/node"
+    }
+  },
   "rewrites": [
     {
       "source": "/api/(.*)",
