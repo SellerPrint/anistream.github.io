@@ -20,11 +20,20 @@ const wss    = new WebSocketServer({ server, path: '/ws' });
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_xxx');
 
 // ── PostgreSQL ────────────────────────────────────────────
+if (!process.env.DATABASE_URL) {
+  console.error('❌ DATABASE_URL manquante ! Ajoutez-la dans les variables Vercel.');
+}
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL?.includes('neon.tech') || process.env.NODE_ENV === 'production'
-    ? { rejectUnauthorized: false } : false,
+  ssl: { rejectUnauthorized: false },
+  connectionTimeoutMillis: 10000,
+  idleTimeoutMillis: 30000,
+  max: 10,
 });
+
+pool.on('error', (err) => console.error('PostgreSQL pool error:', err.message));
+
 const db = {
   query: (t,p) => pool.query(t,p),
   one:   async (t,p) => { const r = await pool.query(t,p); return r.rows[0]||null; },
@@ -34,43 +43,31 @@ const db = {
 
 // ── DB Init ───────────────────────────────────────────────
 async function initDB() {
-  await db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id SERIAL PRIMARY KEY, username TEXT UNIQUE NOT NULL,
-      email TEXT UNIQUE NOT NULL, password TEXT NOT NULL,
-      avatar TEXT DEFAULT '', is_premium INTEGER DEFAULT 0,
-      premium_until TEXT DEFAULT NULL, stripe_customer_id TEXT DEFAULT NULL,
-      created_at TIMESTAMP DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS watchlist (
-      id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL, anime_id TEXT NOT NULL,
-      title TEXT NOT NULL, img TEXT DEFAULT '', lang TEXT DEFAULT 'VOSTFR',
-      ep_progress INTEGER DEFAULT 0, status TEXT DEFAULT 'watching',
-      added_at TIMESTAMP DEFAULT NOW(), UNIQUE(user_id, anime_id)
-    );
-    CREATE TABLE IF NOT EXISTS animelist (
-      id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL, anime_id TEXT NOT NULL,
-      title TEXT NOT NULL, img TEXT DEFAULT '', lang TEXT DEFAULT 'VOSTFR',
-      status TEXT DEFAULT 'want', score INTEGER DEFAULT 0,
-      added_at TIMESTAMP DEFAULT NOW(), UNIQUE(user_id, anime_id)
-    );
-    CREATE TABLE IF NOT EXISTS comments (
-      id SERIAL PRIMARY KEY, anime_id TEXT NOT NULL, user_id INTEGER NOT NULL,
-      username TEXT NOT NULL, content TEXT NOT NULL, likes INTEGER DEFAULT 0,
-      created_at TIMESTAMP DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS chat_messages (
-      id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL, username TEXT NOT NULL,
-      avatar TEXT DEFAULT '', content TEXT NOT NULL, room TEXT DEFAULT 'general',
-      created_at TIMESTAMP DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS comment_likes (
-      user_id INTEGER NOT NULL, comment_id INTEGER NOT NULL,
-      PRIMARY KEY(user_id, comment_id)
-    );
-  `);
-  console.log('✅ DB initialisée');
+  try {
+    const tables = [
+      `CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, username TEXT UNIQUE NOT NULL, email TEXT UNIQUE NOT NULL, password TEXT NOT NULL, avatar TEXT DEFAULT '', is_premium INTEGER DEFAULT 0, premium_until TEXT DEFAULT NULL, stripe_customer_id TEXT DEFAULT NULL, created_at TIMESTAMP DEFAULT NOW())`,
+      `CREATE TABLE IF NOT EXISTS watchlist (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL, anime_id TEXT NOT NULL, title TEXT NOT NULL, img TEXT DEFAULT '', lang TEXT DEFAULT 'VOSTFR', ep_progress INTEGER DEFAULT 0, status TEXT DEFAULT 'watching', added_at TIMESTAMP DEFAULT NOW(), UNIQUE(user_id, anime_id))`,
+      `CREATE TABLE IF NOT EXISTS animelist (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL, anime_id TEXT NOT NULL, title TEXT NOT NULL, img TEXT DEFAULT '', lang TEXT DEFAULT 'VOSTFR', status TEXT DEFAULT 'want', score INTEGER DEFAULT 0, added_at TIMESTAMP DEFAULT NOW(), UNIQUE(user_id, anime_id))`,
+      `CREATE TABLE IF NOT EXISTS comments (id SERIAL PRIMARY KEY, anime_id TEXT NOT NULL, user_id INTEGER NOT NULL, username TEXT NOT NULL, content TEXT NOT NULL, likes INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT NOW())`,
+      `CREATE TABLE IF NOT EXISTS chat_messages (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL, username TEXT NOT NULL, avatar TEXT DEFAULT '', content TEXT NOT NULL, room TEXT DEFAULT 'general', created_at TIMESTAMP DEFAULT NOW())`,
+      `CREATE TABLE IF NOT EXISTS comment_likes (user_id INTEGER NOT NULL, comment_id INTEGER NOT NULL, PRIMARY KEY(user_id, comment_id))`,
+    ];
+    for (const sql of tables) await pool.query(sql);
+    console.log('✅ DB initialisée');
+  } catch(e) {
+    console.error('❌ initDB error:', e.message);
+  }
 }
+
+// ── HEALTH CHECK ──────────────────────────────────────────
+app.get('/api/health', async (req, res) => {
+  try {
+    await pool.query('SELECT 1');
+    res.json({ status: 'ok', db: 'connected', vars: { db: !!process.env.DATABASE_URL, jwt: !!process.env.JWT_SECRET } });
+  } catch(e) {
+    res.status(500).json({ status: 'error', error: e.message, hint: 'Vérifiez DATABASE_URL dans Vercel → Settings → Environment Variables' });
+  }
+});
 
 // ── Middleware ────────────────────────────────────────────
 app.use(cors({ origin: '*', credentials: true }));
@@ -270,6 +267,13 @@ app.get('/api/stats', async (req,res) => {
 
 // ── START ──────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
-initDB().then(() => {
-  server.listen(PORT, () => console.log(`✅ AniStream Backend — port ${PORT} — DB: ${process.env.DATABASE_URL?'PostgreSQL cloud':'local'}`));
-}).catch(e => { console.error('❌ DB Error:', e.message); process.exit(1); });
+
+// Sur Vercel serverless, on init la DB sans bloquer le démarrage
+initDB().catch(e => console.error('initDB warning:', e.message));
+
+server.listen(PORT, () => {
+  console.log(`✅ AniStream Backend — port ${PORT}`);
+});
+
+// Export pour Vercel serverless
+module.exports = app;
