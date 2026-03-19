@@ -254,26 +254,16 @@ wss.on('connection', ws => {
   ws.on('close',()=>{ info.rooms.forEach(r=>broadcastToRoom(r,{type:'user_left',username:info.username,room:r})); clients.delete(ws); });
 });
 
-// ── STATS ─────────────────────────────────────────────────
-app.get('/api/stats', async (req,res) => {
-  const [u,p,c,m] = await Promise.all([
-    db.one('SELECT COUNT(*) as c FROM users'),
-    db.one('SELECT COUNT(*) as c FROM users WHERE is_premium=1'),
-    db.one('SELECT COUNT(*) as c FROM comments'),
-    db.one('SELECT COUNT(*) as c FROM chat_messages'),
-  ]);
-  res.json({users:+u.c,premium:+p.c,comments:+c.c,messages:+m.c,online:clients.size});
-});
-
-// ── START ──────────────────────────────────────────────────
-const PORT = process.env.PORT || 3001;
-
-// Sur Vercel serverless, on init la DB sans bloquer le démarrage
+// ── START (Correction pour Vercel) ─────────────────────────
 initDB().catch(e => console.error('initDB warning:', e.message));
 
-server.listen(PORT, () => {
-  console.log(`✅ AniStream Backend — port ${PORT}`);
-});
+// On ne lance le .listen() QUE si on n'est PAS sur Vercel (en local par exemple)
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 3001;
+  server.listen(PORT, () => {
+    console.log(`✅ Mode Local — port ${PORT}`);
+  });
+}
 
-// Export pour Vercel serverless
+// INDISPENSABLE pour Vercel
 module.exports = app;
