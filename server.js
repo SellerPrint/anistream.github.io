@@ -79,7 +79,7 @@ app.use('/api/auth', rateLimit({ windowMs: 15*60*1000, max: 100 }));
 function auth(req, res, next) {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Token requis' });
-  try { req.user = jwt.verify(token, process.env.JWT_SECRET||'secret'); next(); }
+  try { req.user = jwt.verify(token, process.env.JWT_SECRET||'npg_dLnZI6aJ0CsN'); next(); }
   catch { res.status(401).json({ error: 'Token invalide' }); }
 }
 const san = u => ({ id:u.id,username:u.username,email:u.email,avatar:u.avatar,is_premium:u.is_premium,premium_until:u.premium_until });
